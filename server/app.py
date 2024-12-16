@@ -49,6 +49,7 @@ def paper_trade(strategy, nvda_open, nvdq_open, nvda_shares, nvdq_shares):
 def index():
     if request.method == "POST":
         try:
+            print("Inside POST")
             # Get current date from user input
             user_date = request.form["date"]
             user_date = datetime.datetime.strptime(user_date, "%Y-%m-%d")

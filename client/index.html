@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartTrader</title>
+</head>
+<body>
+    <h1>SmartTrader - Stock Price Prediction and Strategy Recommender</h1>
+    <form id="predictForm" method="post">
+        <label for="date">Select Today's Date:</label>
+        <input type="date" id="date" name="date" required>
+        <button type="submit">Predict</button>
+    </form>
+
+    <div id="output"></div>
+
+    <script>
+        document.getElementById('predictForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch("/", {
+                method: "POST",
+                body: formData
+            });
+            const result = await response.json();
+            let outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = "";
+
+            if (result.error) {
+                outputDiv.innerHTML = `<p>Error: ${result.error}</p>`;
+                return;
+            }
+
+            result.predictions.forEach((day, index) => {
+                outputDiv.innerHTML += `
+                    <p>Day ${index + 1} - High: ${day.high}, Low: ${day.low}, Avg Close: ${day.avg_close}</p>
+                `;
+            });
+
+            outputDiv.innerHTML += `<p>Trading Strategy: ${result.strategy.join(", ")}</p>`;
+            outputDiv.innerHTML += `<p>Final Portfolio Value: $${result.final_value}</p>`;
+        });
+    </script>
+</body>
+</html>

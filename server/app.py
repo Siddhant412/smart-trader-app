@@ -3,22 +3,45 @@ import yfinance as yf
 import pandas as pd
 import datetime
 import numpy as np
+import pickle
+from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
 
 def fetch_data(ticker, start_date, end_date):
     # Fetch historical stock data
     try:
-        data = yf.download(ticker, start=start_date, end=end_date)
+        nvda = yf.Ticker(ticker)
+        data = nvda.history(start=start_date, end=end_date)
+        data = data.dropna()
+        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        data = data.tail(60)
         return data
     except Exception as e:
         print(f"Error fetching data for {ticker}: {e}")
         return None
+    
+def scale_data(scaler, data):
+    return pd.DataFrame(scaler.transform(data), columns=data.columns)
 
-def predict_prices(df):
+def create_sequence(data, sequence_length):
+    sequences = []
+    seq = data[0:0 + sequence_length]
+    sequences.append(seq)
+    return np.array(sequences)
+
+def predict_prices(model, input_sequence, scaler):
     # Predict high, low, and average close prices for the next 5 days.
-    predictions = []
-    return predictions
+    pred_scaled = model.predict(input_sequence)
+    pred_scaled = pred_scaled.reshape(1, 5, 4) 
+    padded_predictions = np.concatenate([pred_scaled, np.zeros((pred_scaled.shape[0], pred_scaled.shape[1], 1))], axis=2)
+    full_predictions_rescaled = scaler.inverse_transform(padded_predictions.reshape(padded_predictions.shape[1], padded_predictions.shape[2]))
+    predictions_rescaled = full_predictions_rescaled[:, :4]
+    return [
+        {"open": day[0], "high": day[1], "low": day[2], "close": day[3]}
+        for day in predictions_rescaled
+    ]
+
 
 def recommend_trading_strategy(predictions, nvda_open, nvdq_open):
     # Recommend trading strategies based on predictions.
@@ -53,25 +76,56 @@ def index():
             # Get current date from user input
             user_date = request.form["date"]
             user_date = datetime.datetime.strptime(user_date, "%Y-%m-%d")
-            start_date = user_date - datetime.timedelta(days=30)
+            start_date = user_date - datetime.timedelta(days=90)
             end_date = user_date
-
+            print(start_date)
+            print(end_date)
             # Fetch stock price data for NVDA and NVDQ
             nvda_data = fetch_data("NVDA", start_date, end_date)
             nvdq_data = fetch_data("NVDQ", start_date, end_date)
 
             if nvda_data is None or nvdq_data is None:
                 return jsonify({"error": "Failed to fetch the data"})
+            print("Data fetched")
+
+            with open("nvda_scaler.pkl", "rb") as f:
+                nvda_scaler = pickle.load(f)
+
+            nvda_data_scaled = scale_data(nvda_scaler, nvda_data)
+            print("Data scaled")
+
+            input_sequence = create_sequence(nvda_data_scaled, 60)
+            print("Input sequence created")
+
+            nvda_model = load_model("nvda_model.keras")
+            print("model loaded")
 
             # Latest open prices
             nvda_open = nvda_data['Open'].iloc[-1]
             nvdq_open = nvdq_data['Open'].iloc[-1]
-
+            
             # Predict prices for next 5 days
-            predictions = predict_prices(nvda_data)
+            predictions = predict_prices(nvda_model, input_sequence, nvda_scaler)
+            # Extract values for high, low, and close prices
+            high_prices = [day['high'] for day in predictions]
+            low_prices = [day['low'] for day in predictions]
+            close_prices = [day['close'] for day in predictions]
+
+            # Format predictions
+            result = {
+                "highest": round(max(high_prices), 2),      # Maximum high price
+                "lowest": round(min(low_prices), 2),        # Minimum low price
+                "average_close": round(sum(close_prices) / len(close_prices), 2)  # Average close price
+            }
+            print("price predicted")
+            print(predictions)
 
             # Recommend trading strategies
             strategy = recommend_trading_strategy(predictions, nvda_open, nvdq_open)
+            # Generate future dates
+            strategy_dates = [(user_date + datetime.timedelta(days=i + 1)).strftime("%Y-%m-%d") for i in range(5)]
+            strategy_list = [{"date": date, "action": action} for date, action in zip(strategy_dates, strategy)]
+            print("strategy decided")
 
             # Paper trading
             nvda_shares, nvdq_shares = paper_trade(strategy, nvda_open, nvdq_open, 10000, 100000)
@@ -79,12 +133,14 @@ def index():
             # Net portfolio value after 5 days
             final_value = nvda_shares * nvda_open + nvdq_shares * nvdq_open
 
-            result = {
-                "predictions": predictions,
-                "strategy": strategy,
+            final_result = {
+                "highest": result["highest"],
+                "lowest": result["lowest"],
+                "average_close": result["average_close"],
+                "strategy": strategy_list,
                 "final_value": round(final_value, 2)
             }
-            return jsonify(result)
+            return jsonify(final_result)
 
         except Exception as e:
             return jsonify({"error": str(e)})

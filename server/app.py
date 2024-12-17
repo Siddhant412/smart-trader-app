@@ -8,6 +8,17 @@ from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
 
+def is_weekend(date):
+    # Check if given date is a weekend
+    return date.weekday() in [5, 6]
+
+def get_next_business_day(date):
+    # Get next business day from today's date
+    next_day = date + datetime.timedelta(days=1)
+    while is_weekend(next_day):
+        next_day += datetime.timedelta(days=1)
+    return next_day
+
 def fetch_data(ticker, start_date, end_date):
     # Fetch historical stock data
     try:
@@ -42,7 +53,6 @@ def predict_prices(model, input_sequence, scaler):
         for day in predictions_rescaled
     ]
 
-
 def recommend_trading_strategy(predictions, nvda_open, nvdq_open):
     # Recommend trading strategies based on predictions.
     strategy = []
@@ -76,10 +86,13 @@ def index():
             # Get current date from user input
             user_date = request.form["date"]
             user_date = datetime.datetime.strptime(user_date, "%Y-%m-%d")
-            start_date = user_date - datetime.timedelta(days=90)
+            
+            # Adjust start date to ensure there are enough business days
+            start_date = user_date - datetime.timedelta(days=120)
             end_date = user_date
             print(start_date)
             print(end_date)
+            
             # Fetch stock price data for NVDA and NVDQ
             nvda_data = fetch_data("NVDA", start_date, end_date)
             nvdq_data = fetch_data("NVDQ", start_date, end_date)
@@ -104,8 +117,9 @@ def index():
             nvda_open = nvda_data['Open'].iloc[-1]
             nvdq_open = nvdq_data['Open'].iloc[-1]
             
-            # Predict prices for next 5 days
+            # Predict prices for next 5 business days
             predictions = predict_prices(nvda_model, input_sequence, nvda_scaler)
+            
             # Extract values for high, low, and close prices
             high_prices = [day['high'] for day in predictions]
             low_prices = [day['low'] for day in predictions]
@@ -113,17 +127,23 @@ def index():
 
             # Format predictions
             result = {
-                "highest": round(max(high_prices), 2),      # Maximum high price
-                "lowest": round(min(low_prices), 2),        # Minimum low price
-                "average_close": round(sum(close_prices) / len(close_prices), 2)  # Average close price
+                "highest": round(max(high_prices), 2),
+                "lowest": round(min(low_prices), 2),
+                "average_close": round(sum(close_prices) / len(close_prices), 2)
             }
             print("price predicted")
             print(predictions)
 
             # Recommend trading strategies
             strategy = recommend_trading_strategy(predictions, nvda_open, nvdq_open)
-            # Generate future dates
-            strategy_dates = [(user_date + datetime.timedelta(days=i + 1)).strftime("%Y-%m-%d") for i in range(5)]
+            
+            # Generate future business dates
+            strategy_dates = []
+            next_date = user_date
+            for _ in range(5):
+                next_date = get_next_business_day(next_date)
+                strategy_dates.append(next_date.strftime("%Y-%m-%d"))
+            
             strategy_list = [{"date": date, "action": action} for date, action in zip(strategy_dates, strategy)]
             print("strategy decided")
 

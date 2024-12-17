@@ -3,6 +3,8 @@ yfinance
 pandas
 numpy
 datetime
-tensorflow
+tensorflow-cpu
 scikit-learn
 keras-tuner
+Flask-Cors
+gunicorn

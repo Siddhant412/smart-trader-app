@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartTrader Console</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        table {
+            width: 300px;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        .output-section {
+            margin-top: 20px;
+        }
+        .output-section h2 {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>SmartTrader Console</h1>
+    <form id="predictForm" method="post">
+        <label for="date">Assume today's date is: </label>
+        <input type="date" id="date" name="date" required>
+        <button type="submit">Predict</button>
+    </form>
+
+    <div class="output-section" id="output"></div>
+
+    <script>
+        // Get the Heroku app URL dynamically
+        const HEROKU_URL = window.location.origin;
+        document.getElementById('predictForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = "<p>Loading...</p>";
+
+            try {
+            
+                const formData = new FormData(this);
+                const response = await fetch(`${HEROKU_URL}/`, {
+                    method: "POST",
+                    body: formData,
+                    mode: 'cors'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                // const outputDiv = document.getElementById('output');
+                outputDiv.innerHTML = ""; // Clear previous content
+
+                if (result.error) {
+                    outputDiv.innerHTML = `<p>Error: ${result.error}</p>`;
+                    return;
+                }
+
+                // Display predictions in a table
+                outputDiv.innerHTML += `
+                    <h2>Predicted prices for the next five business days (in USD) are:</h2>
+                    <table>
+                        <tr>
+                            <th>Highest Price</th>
+                            <td>${result.highest}</td>
+                        </tr>
+                        <tr>
+                            <th>Lowest Price</th>
+                            <td>${result.lowest}</td>
+                        </tr>
+                        <tr>
+                            <th>Average Closing Price</th>
+                            <td>${result.average_close}</td>
+                        </tr>
+                    </table>
+                `;
+
+                // Display trading strategy in a table
+                outputDiv.innerHTML += `
+                    <h2>Recommended trading strategy:</h2>
+                    <table>
+                        <tr>
+                            <th>Date</th>
+                            <th>Action</th>
+                        </tr>
+                        ${result.strategy.map(day => `
+                            <tr>
+                                <td>${day.date}</td>
+                                <td>${day.action}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `;
+
+            } catch (error) {
+                outputDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

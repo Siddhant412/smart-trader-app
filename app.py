@@ -5,8 +5,11 @@ import datetime
 import numpy as np
 import pickle
 from tensorflow.keras.models import load_model
+from flask_cors import CORS
+import os
 
 app = Flask(__name__)
+CORS(app)
 
 def is_weekend(date):
     # Check if given date is a weekend
@@ -168,4 +171,5 @@ def index():
     return render_template("index.html")
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)

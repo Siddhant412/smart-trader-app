@@ -56,30 +56,24 @@ def predict_prices(model, input_sequence, scaler):
         for day in predictions_rescaled
     ]
 
-def recommend_trading_strategy(predictions, nvda_open, nvdq_open):
+def recommend_trading_strategy(predictions):
     # Recommend trading strategies based on predictions.
     strategy = []
-    for day in predictions:
-        if day['high'] > nvda_open * 1.02:  # NVDA is predicted to go up by 2%
+    for i in range(len(predictions)-1):
+        if predictions[i+1]['open'] > predictions[i]['open'] * 1.02:
             strategy.append("BULLISH")
-        elif day['low'] < nvda_open * 0.98:  # NVDA might drop by 2%
+        elif predictions[i+1]['open'] < predictions[i]['open'] * 0.98:
             strategy.append("BEARISH")
         else:
             strategy.append("IDLE")
+    if predictions[4]['close'] > predictions[4]['open'] * 1.02:
+            strategy.append("BULLISH")
+    elif predictions[4]['close'] < predictions[4]['open'] * 0.98:
+        strategy.append("BEARISH")
+    else:
+        strategy.append("IDLE")
     return strategy
 
-def paper_trade(strategy, nvda_open, nvdq_open, nvda_shares, nvdq_shares):
-    # Simulate paper trading for 5 business days based on strategy.
-    for action in strategy:
-        if action == "BULLISH":
-            # Swap all NVDQ shares for NVDA shares
-            nvda_shares += nvdq_shares * (nvdq_open / nvda_open)
-            nvdq_shares = 0
-        elif action == "BEARISH":
-            # Swap all NVDA shares for NVDQ shares
-            nvdq_shares += nvda_shares * (nvda_open / nvdq_open)
-            nvda_shares = 0
-    return nvda_shares, nvdq_shares
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -98,9 +92,7 @@ def index():
             
             # Fetch stock price data for NVDA and NVDQ
             nvda_data = fetch_data("NVDA", start_date, end_date)
-            nvdq_data = fetch_data("NVDQ", start_date, end_date)
-
-            if nvda_data is None or nvdq_data is None:
+            if nvda_data is None:
                 return jsonify({"error": "Failed to fetch the data"})
             print("Data fetched")
 
@@ -115,10 +107,6 @@ def index():
 
             nvda_model = load_model("nvda_model.keras")
             print("model loaded")
-
-            # Latest open prices
-            nvda_open = nvda_data['Open'].iloc[-1]
-            nvdq_open = nvdq_data['Open'].iloc[-1]
             
             # Predict prices for next 5 business days
             predictions = predict_prices(nvda_model, input_sequence, nvda_scaler)
@@ -135,10 +123,16 @@ def index():
                 "average_close": round(sum(close_prices) / len(close_prices), 2)
             }
             print("price predicted")
+
+            # start_date = get_next_business_day(user_date)
+            # end_date = start_date + datetime.timedelta(days=12)
+            # data = fetch_data("NVDA", start_date, end_date)
+            # data = data.head(5)
+            # print(data)
             print(predictions)
 
             # Recommend trading strategies
-            strategy = recommend_trading_strategy(predictions, nvda_open, nvdq_open)
+            strategy = recommend_trading_strategy(predictions)
             
             # Generate future business dates
             strategy_dates = []
@@ -150,18 +144,11 @@ def index():
             strategy_list = [{"date": date, "action": action} for date, action in zip(strategy_dates, strategy)]
             print("strategy decided")
 
-            # Paper trading
-            nvda_shares, nvdq_shares = paper_trade(strategy, nvda_open, nvdq_open, 10000, 100000)
-
-            # Net portfolio value after 5 days
-            final_value = nvda_shares * nvda_open + nvdq_shares * nvdq_open
-
             final_result = {
                 "highest": result["highest"],
                 "lowest": result["lowest"],
                 "average_close": result["average_close"],
                 "strategy": strategy_list,
-                "final_value": round(final_value, 2)
             }
             return jsonify(final_result)
 
